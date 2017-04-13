@@ -1,45 +1,75 @@
 package org.kartevonmorgen.backend;
 
-import org.glassfish.grizzly.http.server.HttpServer;
-import org.glassfish.jersey.grizzly2.httpserver.GrizzlyHttpServerFactory;
-import org.glassfish.jersey.server.ResourceConfig;
-
 import java.io.IOException;
 import java.net.URI;
+import java.util.HashMap;
+import java.util.Map;
+
+import javax.ws.rs.ext.ContextResolver;
+
+import org.flywaydb.core.Flyway;
+import org.glassfish.grizzly.http.server.HttpServer;
+import org.glassfish.jersey.grizzly2.httpserver.GrizzlyHttpServerFactory;
+import org.glassfish.jersey.moxy.json.MoxyJsonConfig;
+import org.glassfish.jersey.server.ResourceConfig;
+
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 /**
  * Main class.
  *
  */
-public class Main {
-    // Base URI the Grizzly HTTP server will listen on
-    public static final String BASE_URI = "http://localhost:8080/myapp/";
+public class Main
+{
 
-    /**
-     * Starts Grizzly HTTP server exposing JAX-RS resources defined in this application.
-     * @return Grizzly HTTP server.
-     */
-    public static HttpServer startServer() {
-        // create a resource config that scans for JAX-RS resources and providers
-        // in org.kartevonmorgen.backend package
-        final ResourceConfig rc = new ResourceConfig().packages("org.kartevonmorgen.backend");
+    public static void main(String[] args) throws IOException {
+	flywayMigrate();
+	URI BASE_URI = URI.create(Config.BASE_URI);
 
-        // create and start a new instance of grizzly http server
-        // exposing the Jersey application at BASE_URI
-        return GrizzlyHttpServerFactory.createHttpServer(URI.create(BASE_URI), rc);
+	try
+	{
+	    System.out.println("JSON with MOXy Jersey Example App");
+
+	    final HttpServer server = GrizzlyHttpServerFactory.createHttpServer(BASE_URI, createApp(), false);
+	    Runtime.getRuntime().addShutdownHook(new Thread(new Runnable()
+	    {
+		@Override
+		public void run() {
+		    server.shutdownNow();
+		}
+	    }));
+	    server.start();
+
+	    System.out.println(String.format("Application started.%nStop the application using CTRL+C"));
+
+	    Thread.currentThread().join();
+	} catch (IOException | InterruptedException ex)
+	{
+	    Logger.getLogger(Main.class.getName()).log(Level.SEVERE, null, ex);
+	}
     }
 
-    /**
-     * Main method.
-     * @param args
-     * @throws IOException
-     */
-    public static void main(String[] args) throws IOException {
-        final HttpServer server = startServer();
-        System.out.println(String.format("Jersey app started with WADL available at "
-                + "%sapplication.wadl\nHit enter to stop it...", BASE_URI));
-        System.in.read();
-        server.stop();
+    public static ResourceConfig createApp() {
+	return new ResourceConfig().packages("org.kartevonmorgen.backend").register(createMoxyJsonResolver());
+    }
+
+    public static ContextResolver<MoxyJsonConfig> createMoxyJsonResolver() {
+	final MoxyJsonConfig moxyJsonConfig = new MoxyJsonConfig();
+	Map<String, String> namespacePrefixMapper = new HashMap<String, String>(1);
+	namespacePrefixMapper.put("http://www.w3.org/2001/XMLSchema-instance", "xsi");
+	moxyJsonConfig.setNamespacePrefixMapper(namespacePrefixMapper).setNamespaceSeparator(':');
+	return moxyJsonConfig.resolver();
+    }
+
+    public static void flywayMigrate() {
+	// Create the Flyway instance
+	Flyway flyway = new Flyway();
+
+	// Point it to the database
+	flyway.setDataSource(Config.DB_NAME, null, null);
+
+	// Start the migration
+	flyway.migrate();
     }
 }
-
